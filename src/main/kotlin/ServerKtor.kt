@@ -14,10 +14,20 @@ import kotlinx.serialization.cbor.Cbor
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.protobuf.ProtoBuf
+import java.util.*
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.collections.LinkedHashSet
 
 object ServerKtor {
     fun start() =
         embeddedServer(Netty, port = 8080, host = "127.0.0.1", module = Application::routing).start(wait = false)
+}
+
+class Connection(val session: DefaultWebSocketSession) {
+    companion object {
+        var lastId: AtomicInteger = AtomicInteger(0)
+    }
+    val name = "user${lastId.getAndIncrement()}"
 }
 
 fun Application.routing() {
@@ -52,6 +62,12 @@ fun Application.routing() {
         }
 
         webSocket("/ws") {
+            val connections = Collections.synchronizedSet<Connection?>(LinkedHashSet())
+            println("Adding user!")
+            val thisConnection = Connection(this)
+            connections += thisConnection
+
+            println(incoming)
             for (frame in incoming) {
                 when (frame) {
                     is Frame.Binary -> {
@@ -60,7 +76,12 @@ fun Application.routing() {
                         val data =
                             Json { encodeDefaults = true;ignoreUnknownKeys=true }.decodeFromString<RequestData>(str)
 //                        outgoing.send(Frame.Text("YOU SAID: $text"))
-                        println(data)
+                        val textWithUsername = "[${thisConnection.name}]: "
+                        connections.forEach {
+                            it.session.send(textWithUsername)
+                            println(it.toString())
+                        }
+                        //println(data)
 
                     }
                     else -> println("b")
